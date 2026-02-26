@@ -1,0 +1,393 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between } from 'typeorm';
+import { Schedule } from '../entities/schedule.entity';
+import { ScheduleWeek } from '../entities/schedule-week.entity';
+import { Teacher } from '../entities/teacher.entity';
+import { Stage } from '../entities/stage.entity';
+
+// 统计分析服务
+@Injectable()
+export class StatisticsService {
+  constructor(
+    @InjectRepository(Schedule)
+    private scheduleRepository: Repository<Schedule>,
+    @InjectRepository(ScheduleWeek)
+    private weekRepository: Repository<ScheduleWeek>,
+    @InjectRepository(Teacher)
+    private teacherRepository: Repository<Teacher>,
+    @InjectRepository(Stage)
+    private stageRepository: Repository<Stage>,
+  ) {}
+
+  // 获取指定周的教师统计
+  async getWeeklyStatistics(weekId: number) {
+    const schedules = await this.scheduleRepository.find({
+      where: { weekId },
+      relations: ['teacher', 'teacher.subject', 'stage'],
+    });
+    
+    const teachers = await this.teacherRepository.find({
+      where: { isActive: true },
+      relations: ['subject'],
+    });
+    
+    const stage2 = await this.stageRepository.findOne({
+      where: { stageNumber: 2, isActive: true },
+    });
+    
+    // 统计每个教师的排班次数
+    const teacherStats = teachers.map(teacher => {
+      const teacherSchedules = schedules.filter(s => s.teacherId === teacher.id);
+      const totalCount = teacherSchedules.length;
+      const stage2Count = stage2 
+        ? teacherSchedules.filter(s => s.stageId === stage2.id).length 
+        : 0;
+      
+      return {
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        subjectName: teacher.subject?.name || '未设置',
+        totalCount,
+        stage2Count,
+      };
+    });
+    
+    // 按总次数排序
+    teacherStats.sort((a, b) => b.totalCount - a.totalCount);
+    
+    return {
+      weekId,
+      statistics: teacherStats,
+      summary: {
+        totalSchedules: schedules.length,
+        teacherCount: teachers.length,
+        avgSchedulesPerTeacher: teachers.length > 0 
+          ? (schedules.length / teachers.length).toFixed(2) 
+          : 0,
+      },
+    };
+  }
+
+  // 获取第二阶段均衡性分析
+  async getStage2BalanceAnalysis(startWeekId?: number, endWeekId?: number) {
+    // 获取第二阶段
+    const stage2 = await this.stageRepository.findOne({
+      where: { stageNumber: 2, isActive: true },
+    });
+    
+    if (!stage2) {
+      return { message: '第二阶段未配置', data: [] };
+    }
+    
+    // 获取所有已确认的排班周
+    let weeks = await this.weekRepository.find({
+      where: { status: 'confirmed' },
+      order: { year: 'ASC', weekNumber: 'ASC' },
+    });
+    
+    if (weeks.length === 0) {
+      return { message: '暂无已确认的排班数据', data: [] };
+    }
+    
+    // 获取所有教师
+    const teachers = await this.teacherRepository.find({
+      where: { isActive: true },
+      relations: ['subject'],
+    });
+    
+    // 统计每个教师在第二阶段的历史排班次数
+    const weekIds = weeks.map(w => w.id);
+    const schedules = await this.scheduleRepository.find({
+      where: { stageId: stage2.id },
+      relations: ['teacher'],
+    });
+    
+    // 只统计在范围内的排班
+    const filteredSchedules = schedules.filter(s => weekIds.includes(s.weekId));
+    
+    const teacherStage2Stats = teachers.map(teacher => {
+      const count = filteredSchedules.filter(s => s.teacherId === teacher.id).length;
+      return {
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        subjectName: teacher.subject?.name || '未设置',
+        stage2Count: count,
+      };
+    });
+    
+    // 计算均衡性指标
+    const counts = teacherStage2Stats.map(s => s.stage2Count);
+    const maxCount = Math.max(...counts, 0);
+    const minCount = Math.min(...counts, 0);
+    const avgCount = counts.length > 0 
+      ? counts.reduce((a, b) => a + b, 0) / counts.length 
+      : 0;
+    
+    // 生成均衡性建议
+    const suggestions: string[] = [];
+    
+    if (maxCount - minCount > 3) {
+      const overloadedTeachers = teacherStage2Stats
+        .filter(s => s.stage2Count > avgCount + 1)
+        .map(s => s.teacherName);
+      const underloadedTeachers = teacherStage2Stats
+        .filter(s => s.stage2Count < avgCount - 1)
+        .map(s => s.teacherName);
+      
+      if (overloadedTeachers.length > 0) {
+        suggestions.push(`建议减少以下教师的第二阶段安排：${overloadedTeachers.join('、')}`);
+      }
+      if (underloadedTeachers.length > 0) {
+        suggestions.push(`建议增加以下教师的第二阶段安排：${underloadedTeachers.join('、')}`);
+      }
+    } else {
+      suggestions.push('当前第二阶段排班较为均衡');
+    }
+    
+    return {
+      weekCount: weeks.length,
+      statistics: teacherStage2Stats.sort((a, b) => b.stage2Count - a.stage2Count),
+      balance: {
+        maxCount,
+        minCount,
+        avgCount: avgCount.toFixed(2),
+        variance: maxCount - minCount,
+      },
+      suggestions,
+    };
+  }
+
+  // 导出统计数据
+  async exportStatistics(weekId: number) {
+    const stats = await this.getWeeklyStatistics(weekId);
+    const week = await this.weekRepository.findOne({ where: { id: weekId } });
+    
+    return {
+      weekInfo: week,
+      ...stats,
+    };
+  }
+
+  // 获取历史排班记录
+  async getHistoryRecords(page: number = 1, pageSize: number = 10) {
+    const [weeks, total] = await this.weekRepository.findAndCount({
+      order: { year: 'DESC', weekNumber: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    
+    return {
+      data: weeks,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  /**
+   * 获取多维度统计分析
+   * 包括：按学科统计、按星期统计、按阶段统计、教师工作量分布
+   */
+  async getMultiDimensionStatistics(weekId: number) {
+    const schedules = await this.scheduleRepository.find({
+      where: { weekId },
+      relations: ['teacher', 'teacher.subject', 'stage', 'class'],
+    });
+
+    const stages = await this.stageRepository.find({
+      where: { isActive: true },
+      order: { stageNumber: 'ASC' },
+    });
+
+    // 按学科统计
+    const subjectStats = new Map<string, { count: number; teachers: Set<string> }>();
+    schedules.forEach(s => {
+      const subjectName = s.teacher?.subject?.name || '未设置';
+      if (!subjectStats.has(subjectName)) {
+        subjectStats.set(subjectName, { count: 0, teachers: new Set() });
+      }
+      const stat = subjectStats.get(subjectName)!;
+      stat.count++;
+      stat.teachers.add(s.teacher?.name || '');
+    });
+
+    const bySubject = Array.from(subjectStats.entries()).map(([name, stat]) => ({
+      subjectName: name,
+      scheduleCount: stat.count,
+      teacherCount: stat.teachers.size,
+    })).sort((a, b) => b.scheduleCount - a.scheduleCount);
+
+    // 按星期统计
+    const dayNames = ['', '周一', '周二', '周三', '周四', '周五'];
+    const byDayOfWeek = [1, 2, 3, 4, 5].map(day => {
+      const daySchedules = schedules.filter(s => s.dayOfWeek === day);
+      return {
+        dayOfWeek: day,
+        dayName: dayNames[day],
+        scheduleCount: daySchedules.length,
+        teacherCount: new Set(daySchedules.map(s => s.teacherId)).size,
+        classCount: new Set(daySchedules.map(s => s.classId)).size,
+      };
+    });
+
+    // 按阶段统计
+    const byStage = stages.map(stage => {
+      const stageSchedules = schedules.filter(s => s.stageId === stage.id);
+      return {
+        stageId: stage.id,
+        stageName: stage.name,
+        stageNumber: stage.stageNumber,
+        scheduleCount: stageSchedules.length,
+        teacherCount: new Set(stageSchedules.map(s => s.teacherId)).size,
+        classCount: new Set(stageSchedules.map(s => s.classId)).size,
+      };
+    });
+
+    // 教师工作量分布（用于直方图）
+    const teacherCounts = new Map<number, number>();
+    schedules.forEach(s => {
+      teacherCounts.set(s.teacherId, (teacherCounts.get(s.teacherId) || 0) + 1);
+    });
+    
+    const countDistribution = new Map<number, number>();
+    teacherCounts.forEach(count => {
+      countDistribution.set(count, (countDistribution.get(count) || 0) + 1);
+    });
+
+    const workloadDistribution = Array.from(countDistribution.entries())
+      .map(([count, teachers]) => ({ scheduleCount: count, teacherCount: teachers }))
+      .sort((a, b) => a.scheduleCount - b.scheduleCount);
+
+    // 排班类型分布
+    const typeStats = new Map<string, number>();
+    schedules.forEach(s => {
+      const type = s.scheduleType || 'unknown';
+      typeStats.set(type, (typeStats.get(type) || 0) + 1);
+    });
+
+    const typeNames: Record<string, string> = {
+      headTeacher: '班主任优先',
+      mainSubject: '主科优先',
+      other: '其他学科',
+      fill: '补充安排',
+      stage3: '第三阶段',
+      unknown: '未知',
+    };
+
+    const byScheduleType = Array.from(typeStats.entries()).map(([type, count]) => ({
+      type,
+      typeName: typeNames[type] || type,
+      count,
+      percentage: schedules.length > 0 ? ((count / schedules.length) * 100).toFixed(1) : '0',
+    }));
+
+    return {
+      weekId,
+      totalSchedules: schedules.length,
+      bySubject,
+      byDayOfWeek,
+      byStage,
+      workloadDistribution,
+      byScheduleType,
+    };
+  }
+
+  /**
+   * 获取教师工作量趋势分析
+   */
+  async getWorkloadTrend(teacherId: number, weekCount: number = 4) {
+    const teacher = await this.teacherRepository.findOne({
+      where: { id: teacherId },
+      relations: ['subject'],
+    });
+
+    if (!teacher) {
+      return { message: '教师不存在', data: [] };
+    }
+
+    // 获取最近 N 周的已确认排班
+    const weeks = await this.weekRepository.find({
+      where: { status: 'confirmed' },
+      order: { year: 'DESC', weekNumber: 'DESC' },
+      take: weekCount,
+    });
+
+    if (weeks.length === 0) {
+      return { 
+        teacher: { id: teacher.id, name: teacher.name, subjectName: teacher.subject?.name },
+        message: '暂无已确认的排班数据', 
+        data: [] 
+      };
+    }
+
+    const stage2 = await this.stageRepository.findOne({
+      where: { stageNumber: 2, isActive: true },
+    });
+
+    // 统计每周的排班情况
+    const trendData = await Promise.all(
+      weeks.reverse().map(async week => {
+        const schedules = await this.scheduleRepository.find({
+          where: { weekId: week.id, teacherId },
+          relations: ['stage'],
+        });
+
+        const totalCount = schedules.length;
+        const stage2Count = stage2 
+          ? schedules.filter(s => s.stageId === stage2.id).length 
+          : 0;
+
+        // 按星期分布
+        const byDay = [1, 2, 3, 4, 5].map(day => 
+          schedules.filter(s => s.dayOfWeek === day).length
+        );
+
+        return {
+          weekId: week.id,
+          year: week.year,
+          weekNumber: week.weekNumber,
+          weekLabel: `${week.year}年第${week.weekNumber}周`,
+          totalCount,
+          stage2Count,
+          byDay,
+        };
+      })
+    );
+
+    // 计算趋势指标
+    const counts = trendData.map(d => d.totalCount);
+    const avgCount = counts.length > 0 
+      ? counts.reduce((a, b) => a + b, 0) / counts.length 
+      : 0;
+    
+    // 计算变化趋势（简单线性回归斜率）
+    let trend = 'stable';
+    if (counts.length >= 2) {
+      const firstHalf = counts.slice(0, Math.floor(counts.length / 2));
+      const secondHalf = counts.slice(Math.floor(counts.length / 2));
+      const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+      const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+      
+      if (secondAvg > firstAvg + 1) trend = 'increasing';
+      else if (secondAvg < firstAvg - 1) trend = 'decreasing';
+    }
+
+    return {
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+        subjectName: teacher.subject?.name || '未设置',
+      },
+      summary: {
+        avgCount: avgCount.toFixed(2),
+        maxCount: Math.max(...counts, 0),
+        minCount: Math.min(...counts, 0),
+        trend,
+        trendLabel: trend === 'increasing' ? '上升' : trend === 'decreasing' ? '下降' : '稳定',
+      },
+      data: trendData,
+    };
+  }
+}
