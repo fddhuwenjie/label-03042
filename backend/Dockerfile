@@ -33,5 +33,5 @@ COPY --from=builder /app/dist ./dist
 # 暴露端口
 EXPOSE 8042
 
-# 启动应用
-CMD ["node", "dist/main"]
+# 启动应用（先执行种子脚本初始化数据，再启动服务）
+CMD ["sh", "-c", "node dist/seed.js && exec node dist/main"]

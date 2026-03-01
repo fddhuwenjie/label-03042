@@ -47,7 +47,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       password: process.env.DB_PASSWORD || 'admin123',
       database: process.env.DB_DATABASE || 'scheduling',
       entities: [User, Class, Teacher, Subject, SubjectExcludeDate, Stage, Schedule, ScheduleWeek],
-      synchronize: process.env.NODE_ENV !== 'production', // 仅开发环境自动同步，生产环境应使用 migrations
+      synchronize: process.env.DB_SYNCHRONIZE === 'true' || process.env.NODE_ENV !== 'production', // Docker 或开发环境自动同步表结构
       logging: process.env.NODE_ENV !== 'production',
     }),
     TypeOrmModule.forFeature([User, Class, Teacher, Subject, SubjectExcludeDate, Stage, Schedule, ScheduleWeek]),

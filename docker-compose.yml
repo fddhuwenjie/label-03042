@@ -36,6 +36,7 @@ services:
       DB_USERNAME: admin
       DB_PASSWORD: admin123
       DB_DATABASE: scheduling
+      DB_SYNCHRONIZE: "true"  # 自动创建表结构，便于种子数据初始化
       JWT_SECRET: scheduling-jwt-secret-key-2024
       PORT: 8042
     depends_on:
