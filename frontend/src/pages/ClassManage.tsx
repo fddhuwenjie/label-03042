@@ -24,8 +24,8 @@ const ClassManage: React.FC = () => {
       ]);
       setClasses(classData);
       setTeachers(teacherData);
-    } catch (error) {
-      message.error('加载数据失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -95,10 +95,10 @@ const ClassManage: React.FC = () => {
     }
   };
 
-  // 设置班主任
-  const handleSetHeadTeacher = async (classId: number, teacherId: number) => {
+  // 设置班主任（teacherId 为 undefined 时表示清空班主任）
+  const handleSetHeadTeacher = async (classId: number, teacherId: number | undefined) => {
     try {
-      await classApi.setHeadTeacher(classId, teacherId);
+      await classApi.setHeadTeacher(classId, teacherId ?? null);
       message.success('设置成功');
       loadData();
     } catch (error) {

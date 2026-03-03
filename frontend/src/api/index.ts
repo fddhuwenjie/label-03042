@@ -168,11 +168,11 @@ export const classApi = {
   delete: (id: number) => api.delete(`/classes/${id}`),
   
   /**
-   * 设置班主任
+   * 设置班主任（teacherId 传 null 表示清空班主任）
    * @param {number} classId - 班级 ID
-   * @param {number} teacherId - 教师 ID
+   * @param {number | null} teacherId - 教师 ID，null 表示清空
    */
-  setHeadTeacher: (classId: number, teacherId: number) =>
+  setHeadTeacher: (classId: number, teacherId: number | null) =>
     api.put(`/classes/${classId}/head-teacher`, { teacherId }),
 };
 

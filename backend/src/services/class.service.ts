@@ -25,8 +25,7 @@ export class ClassService {
         .leftJoinAndSelect('class.headTeacher', 'headTeacher')
         .leftJoinAndSelect('headTeacher.subject', 'subject')
         .where('class.isActive = :isActive', { isActive: true })
-        .orderBy('class.grade', 'ASC')
-        .addOrderBy('class.classNumber', 'ASC');
+        .orderBy('class.id', 'ASC');
       
       // 如果提供了分页参数，返回分页结果
       if (page && pageSize) {

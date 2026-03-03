@@ -29,8 +29,8 @@ const TeacherManage: React.FC = () => {
       setClasses(classData);
       // 初始化已选中的第三阶段教师
       setSelectedStage3Teachers(teacherData.filter((t: any) => t.canStage3).map((t: any) => t.id));
-    } catch (error) {
-      message.error('加载数据失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -65,8 +65,9 @@ const TeacherManage: React.FC = () => {
       form.resetFields();
       setEditingTeacher(null);
       loadData();
-    } catch (error) {
-      message.error('保存失败');
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -76,8 +77,8 @@ const TeacherManage: React.FC = () => {
       await teacherApi.delete(id);
       message.success('删除成功');
       loadData();
-    } catch (error) {
-      message.error('删除失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -87,8 +88,8 @@ const TeacherManage: React.FC = () => {
       await teacherApi.update(teacher.id, { canStage3: !teacher.canStage3 });
       message.success('更新成功');
       loadData();
-    } catch (error) {
-      message.error('更新失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -105,8 +106,8 @@ const TeacherManage: React.FC = () => {
       message.success('批量设置成功');
       setStage3ModalVisible(false);
       loadData();
-    } catch (error) {
-      message.error('设置失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 

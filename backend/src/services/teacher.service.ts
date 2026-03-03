@@ -28,7 +28,7 @@ export class TeacherService {
         .leftJoinAndSelect('teacher.subject', 'subject')
         .leftJoinAndSelect('teacher.teachingClasses', 'teachingClasses')
         .where('teacher.isActive = :isActive', { isActive: true })
-        .orderBy('teacher.name', 'ASC');
+        .orderBy('teacher.id', 'ASC');
       
       // 如果提供了分页参数，返回分页结果
       if (page && pageSize) {

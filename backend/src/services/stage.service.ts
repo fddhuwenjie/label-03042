@@ -32,7 +32,7 @@ export class StageService implements OnModuleInit {
   async findAll() {
     return this.stageRepository.find({
       where: { isActive: true },
-      order: { stageNumber: 'ASC' },
+      order: { id: 'ASC' },
     });
   }
 

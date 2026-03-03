@@ -47,8 +47,8 @@ const Statistics: React.FC = () => {
     try {
       const data: any = await statisticsApi.getWeeklyStatistics(weekId);
       setWeeklyStats(data);
-    } catch (error) {
-      message.error('加载统计数据失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -70,8 +70,8 @@ const Statistics: React.FC = () => {
     try {
       const data: any = await statisticsApi.getStage2Balance();
       setBalanceData(data);
-    } catch (error) {
-      message.error('加载均衡性数据失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -82,8 +82,8 @@ const Statistics: React.FC = () => {
     try {
       const data: any = await statisticsApi.getWorkloadTrend(teacherId, 8);
       setWorkloadTrend(data);
-    } catch (error) {
-      message.error('加载工作量趋势失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -114,8 +114,8 @@ const Statistics: React.FC = () => {
       link.click();
       link.remove();
       message.success('导出成功');
-    } catch (error) {
-      message.error('导出失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 

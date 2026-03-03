@@ -33,8 +33,8 @@ const SubjectManage: React.FC = () => {
       ]);
       setSubjects(subjectData);
       setExcludeDates(excludeData);
-    } catch (error) {
-      message.error('加载数据失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -59,8 +59,9 @@ const SubjectManage: React.FC = () => {
       form.resetFields();
       setEditingSubject(null);
       loadData();
-    } catch (error) {
-      message.error('保存失败');
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -70,8 +71,8 @@ const SubjectManage: React.FC = () => {
       await subjectApi.delete(id);
       message.success('删除成功');
       loadData();
-    } catch (error) {
-      message.error('删除失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -85,7 +86,8 @@ const SubjectManage: React.FC = () => {
       excludeForm.resetFields();
       loadData();
     } catch (error: any) {
-      message.error(error.message || '添加失败');
+      if (error?.errorFields) return;
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -95,8 +97,8 @@ const SubjectManage: React.FC = () => {
       await subjectApi.removeExcludeDate(id);
       message.success('删除成功');
       loadData();
-    } catch (error) {
-      message.error('删除失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 

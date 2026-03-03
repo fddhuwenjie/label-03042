@@ -70,7 +70,8 @@ export class BatchCreateClassDto {
 
 // 设置班主任 DTO
 export class SetHeadTeacherDto {
+  @IsOptional()
   @IsNumber({}, { message: '教师ID必须是数字' })
   @Min(1, { message: '教师ID必须大于0' })
-  teacherId: number;
+  teacherId?: number | null;
 }

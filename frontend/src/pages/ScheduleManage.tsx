@@ -58,8 +58,8 @@ const ScheduleManage: React.FC = () => {
       if (data.length > 0 && !selectedWeekId) {
         setSelectedWeekId(data[0].id);
       }
-    } catch (error) {
-      message.error('加载排班周失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -73,8 +73,8 @@ const ScheduleManage: React.FC = () => {
       setCurrentWeek(data.week);
       setSchedules(data.schedules);
       setWarnings(data.warnings || []);
-    } catch (error) {
-      message.error('加载排班数据失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -115,8 +115,8 @@ const ScheduleManage: React.FC = () => {
       setSelectedDate(null);
       await loadWeeks();
       setSelectedWeekId(newWeek.id);
-    } catch (error: any) {
-      message.error(error.message || '创建失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -133,8 +133,8 @@ const ScheduleManage: React.FC = () => {
       }
       setWarnings(result.warnings || []);
       loadSchedules(selectedWeekId);
-    } catch (error: any) {
-      message.error(error.message || '生成失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -147,8 +147,8 @@ const ScheduleManage: React.FC = () => {
       message.success('排班已确认');
       loadWeeks();
       loadSchedules(selectedWeekId);
-    } catch (error: any) {
-      message.error(error.message || '确认失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -161,8 +161,8 @@ const ScheduleManage: React.FC = () => {
       message.success('删除成功');
       setSelectedWeekId(null);
       loadWeeks();
-    } catch (error) {
-      message.error('删除失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 
@@ -172,8 +172,8 @@ const ScheduleManage: React.FC = () => {
       await scheduleApi.updateSchedule(scheduleId, { [field]: value });
       message.success('更新成功');
       loadSchedules(selectedWeekId!);
-    } catch (error: any) {
-      message.error(error.message || '更新失败');
+    } catch {
+      // API 拦截器已处理错误提示
     }
   };
 

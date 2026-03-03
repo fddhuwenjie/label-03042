@@ -40,7 +40,7 @@ export class SubjectService implements OnModuleInit {
   async findAll() {
     return this.subjectRepository.find({
       where: { isActive: true },
-      order: { isMain: 'DESC', name: 'ASC' },
+      order: { id: 'ASC' },
     });
   }
 
@@ -89,7 +89,7 @@ export class SubjectService implements OnModuleInit {
   async getExcludeDates() {
     return this.excludeDateRepository.find({
       relations: ['subject'],
-      order: { subjectId: 'ASC', dayOfWeek: 'ASC' },
+      order: { id: 'ASC' },
     });
   }
 

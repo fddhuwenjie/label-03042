@@ -27,8 +27,8 @@ const StageManage: React.FC = () => {
         formValues[`stage${s.stageNumber}`] = s.classCount;
       });
       form.setFieldsValue(formValues);
-    } catch (error) {
-      message.error('加载数据失败');
+    } catch {
+      // API 拦截器已处理错误提示
     } finally {
       setLoading(false);
     }
@@ -51,8 +51,9 @@ const StageManage: React.FC = () => {
       await stageApi.updateClassCounts(data);
       message.success('保存成功');
       loadData();
-    } catch (error) {
-      message.error('保存失败');
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      // API 拦截器已处理错误提示
     }
   };
 
