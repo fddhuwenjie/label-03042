@@ -157,15 +157,33 @@ const Statistics: React.FC = () => {
     },
   ];
 
-  // 均衡性表格列
+  // 均衡性表格列（整体工作量）
   const balanceColumns = [
     { title: '教师姓名', dataIndex: 'teacherName', key: 'teacherName' },
     { title: '任教学科', dataIndex: 'subjectName', key: 'subjectName' },
     { 
-      title: '第二阶段累计次数', 
+      title: '总排班次数', 
+      dataIndex: 'totalCount', 
+      key: 'totalCount',
+      sorter: (a: any, b: any) => a.totalCount - b.totalCount,
+    },
+    { 
+      title: '第一阶段', 
+      dataIndex: 'stage1Count', 
+      key: 'stage1Count',
+      sorter: (a: any, b: any) => (a.stage1Count || 0) - (b.stage1Count || 0),
+    },
+    { 
+      title: '第二阶段', 
       dataIndex: 'stage2Count', 
       key: 'stage2Count',
-      sorter: (a: any, b: any) => a.stage2Count - b.stage2Count,
+      sorter: (a: any, b: any) => (a.stage2Count || 0) - (b.stage2Count || 0),
+    },
+    { 
+      title: '第三阶段', 
+      dataIndex: 'stage3Count', 
+      key: 'stage3Count',
+      sorter: (a: any, b: any) => (a.stage3Count || 0) - (b.stage3Count || 0),
     },
   ];
 
@@ -202,14 +220,15 @@ const Statistics: React.FC = () => {
     };
   };
 
-  // 均衡性图表配置
+  // 均衡性图表配置（整体工作量）
   const getBalanceChartOption = () => {
-    if (!balanceData?.statistics) return {};
+    if (!balanceData?.overallStatistics) return {};
     
-    const data = balanceData.statistics;
+    const data = balanceData.overallStatistics.slice(0, 20);
+    const overallAvg = parseFloat(balanceData.overallBalance?.avgCount || 0);
     
     return {
-      title: { text: '第二阶段排班均衡性分析', left: 'center' },
+      title: { text: '全阶段排班均衡性分析', left: 'center' },
       tooltip: { trigger: 'axis' },
       xAxis: {
         type: 'category',
@@ -219,23 +238,28 @@ const Statistics: React.FC = () => {
       yAxis: { type: 'value', name: '累计次数' },
       series: [
         {
-          name: '第二阶段次数',
+          name: '第一阶段',
           type: 'bar',
-          data: data.map((s: any) => s.stage2Count),
-          itemStyle: {
-            color: (params: any) => {
-              const avg = parseFloat(balanceData.balance?.avgCount || 0);
-              const value = params.value;
-              if (value > avg + 1) return '#ff4d4f';
-              if (value < avg - 1) return '#faad14';
-              return '#52c41a';
-            },
-          },
+          stack: 'total',
+          data: data.map((s: any) => s.stage1Count || 0),
+          itemStyle: { color: '#1890ff' },
+        },
+        {
+          name: '第二阶段',
+          type: 'bar',
+          stack: 'total',
+          data: data.map((s: any) => s.stage2Count || 0),
+          itemStyle: { color: '#52c41a' },
+        },
+        {
+          name: '第三阶段',
+          type: 'bar',
+          stack: 'total',
+          data: data.map((s: any) => s.stage3Count || 0),
+          itemStyle: { color: '#faad14' },
         },
       ],
-      markLine: {
-        data: [{ type: 'average', name: '平均值' }],
-      },
+      legend: { data: ['第一阶段', '第二阶段', '第三阶段'], bottom: 0 },
     };
   };
 
@@ -473,7 +497,7 @@ const Statistics: React.FC = () => {
             },
             {
               key: 'balance',
-              label: '第二阶段均衡性分析',
+              label: '全阶段均衡性分析',
               children: (
                 <>
                   {balanceData?.suggestions && (
@@ -486,31 +510,31 @@ const Statistics: React.FC = () => {
                           ))}
                         </ul>
                       }
-                      type={balanceData.balance?.variance > 3 ? 'warning' : 'success'}
+                      type={balanceData.overallBalance?.variance > 3 ? 'warning' : 'success'}
                       showIcon
                       style={{ marginBottom: 16 }}
                     />
                   )}
 
-                  {balanceData?.balance && (
+                  {balanceData?.overallBalance && (
                     <div style={{ marginBottom: 16 }}>
                       <Tag>统计周数：{balanceData.weekCount}</Tag>
-                      <Tag>最高次数：{balanceData.balance.maxCount}</Tag>
-                      <Tag>最低次数：{balanceData.balance.minCount}</Tag>
-                      <Tag>平均次数：{balanceData.balance.avgCount}</Tag>
-                      <Tag color={balanceData.balance.variance > 3 ? 'red' : 'green'}>
-                        差异值：{balanceData.balance.variance}
+                      <Tag>最高总次数：{balanceData.overallBalance.maxCount}</Tag>
+                      <Tag>最低总次数：{balanceData.overallBalance.minCount}</Tag>
+                      <Tag>平均总次数：{balanceData.overallBalance.avgCount}</Tag>
+                      <Tag color={balanceData.overallBalance.variance > 3 ? 'red' : 'green'}>
+                        差异值：{balanceData.overallBalance.variance}
                       </Tag>
                     </div>
                   )}
 
-                  {balanceData?.statistics && (
+                  {balanceData?.overallStatistics && (
                     <ReactECharts option={getBalanceChartOption()} style={{ height: 400 }} />
                   )}
 
                   <Table
                     columns={balanceColumns}
-                    dataSource={balanceData?.statistics || []}
+                    dataSource={balanceData?.overallStatistics || []}
                     rowKey="teacherId"
                     loading={loading}
                     pagination={{ pageSize: 10 }}

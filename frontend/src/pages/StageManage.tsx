@@ -42,10 +42,24 @@ const StageManage: React.FC = () => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
+      const s1 = values.stage1 || 0;
+      const s2 = values.stage2 || 0;
+      const s3 = values.stage3 || 0;
+
+      // 阶段间班级数量约束校验
+      if (s2 > s1) {
+        message.error('第二阶段的班级数量不能超过第一阶段');
+        return;
+      }
+      if (s3 > s2) {
+        message.error('第三阶段的班级数量不能超过第二阶段');
+        return;
+      }
+
       const data = [
-        { stageNumber: 1, classCount: values.stage1 || 0 },
-        { stageNumber: 2, classCount: values.stage2 || 0 },
-        { stageNumber: 3, classCount: values.stage3 || 0 },
+        { stageNumber: 1, classCount: s1 },
+        { stageNumber: 2, classCount: s2 },
+        { stageNumber: 3, classCount: s3 },
       ];
       
       await stageApi.updateClassCounts(data);
@@ -65,6 +79,7 @@ const StageManage: React.FC = () => {
           description={
             <ul style={{ margin: 0, paddingLeft: 20 }}>
               <li>课后服务分为3个阶段，每个阶段可配置需要安排的班级数量</li>
+              <li>阶段班级数量约束：第一阶段 ≥ 第二阶段 ≥ 第三阶段</li>
               <li>第三阶段仅限指定教师参与（在教师管理中设置）</li>
               <li>被安排第三阶段的教师必须从第一阶段连续安排至第三阶段</li>
               <li>当前系统共有 <strong>{classCount}</strong> 个班级</li>

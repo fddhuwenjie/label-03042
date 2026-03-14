@@ -70,93 +70,161 @@ export class StatisticsService {
   }
 
   // 获取第二阶段均衡性分析
-  async getStage2BalanceAnalysis(startWeekId?: number, endWeekId?: number) {
-    // 获取第二阶段
-    const stage2 = await this.stageRepository.findOne({
-      where: { stageNumber: 2, isActive: true },
-    });
-    
-    if (!stage2) {
-      return { message: '第二阶段未配置', data: [] };
-    }
-    
-    // 获取所有已确认的排班周
-    let weeks = await this.weekRepository.find({
-      where: { status: 'confirmed' },
-      order: { year: 'ASC', weekNumber: 'ASC' },
-    });
-    
-    if (weeks.length === 0) {
-      return { message: '暂无已确认的排班数据', data: [] };
-    }
-    
-    // 获取所有教师
-    const teachers = await this.teacherRepository.find({
-      where: { isActive: true },
-      relations: ['subject'],
-    });
-    
-    // 统计每个教师在第二阶段的历史排班次数
-    const weekIds = weeks.map(w => w.id);
-    const schedules = await this.scheduleRepository.find({
-      where: { stageId: stage2.id },
-      relations: ['teacher'],
-    });
-    
-    // 只统计在范围内的排班
-    const filteredSchedules = schedules.filter(s => weekIds.includes(s.weekId));
-    
-    const teacherStage2Stats = teachers.map(teacher => {
-      const count = filteredSchedules.filter(s => s.teacherId === teacher.id).length;
+  // 获取全阶段均衡性分析
+    async getStage2BalanceAnalysis(startWeekId?: number, endWeekId?: number) {
+      // 获取所有阶段
+      const stages = await this.stageRepository.find({
+        where: { isActive: true },
+        order: { stageNumber: 'ASC' },
+      });
+
+      if (stages.length === 0) {
+        return { message: '暂无阶段配置', data: [] };
+      }
+
+      // 获取所有已确认的排班周
+      const weeks = await this.weekRepository.find({
+        where: { status: 'confirmed' },
+        order: { year: 'ASC', weekNumber: 'ASC' },
+      });
+
+      if (weeks.length === 0) {
+        return { message: '暂无已确认的排班数据', data: [] };
+      }
+
+      // 获取所有教师
+      const teachers = await this.teacherRepository.find({
+        where: { isActive: true },
+        relations: ['subject'],
+      });
+
+      const weekIds = weeks.map(w => w.id);
+
+      // 获取范围内的所有排班
+      const schedules = await this.scheduleRepository.find({
+        relations: ['teacher'],
+      });
+      const filteredSchedules = schedules.filter(s => weekIds.includes(s.weekId));
+
+      // 按阶段分别统计每个教师的排班次数
+      const stageAnalyses = stages.map(stage => {
+        const stageSchedules = filteredSchedules.filter(s => s.stageId === stage.id);
+
+        const teacherStats = teachers.map(teacher => {
+          const count = stageSchedules.filter(s => s.teacherId === teacher.id).length;
+          return {
+            teacherId: teacher.id,
+            teacherName: teacher.name,
+            subjectName: teacher.subject?.name || '未设置',
+            count,
+          };
+        });
+
+        const counts = teacherStats.map(s => s.count);
+        const maxCount = Math.max(...counts, 0);
+        const minCount = Math.min(...counts, 0);
+        const avgCount = counts.length > 0
+          ? counts.reduce((a, b) => a + b, 0) / counts.length
+          : 0;
+
+        return {
+          stageId: stage.id,
+          stageName: stage.name,
+          stageNumber: stage.stageNumber,
+          statistics: teacherStats.sort((a, b) => b.count - a.count),
+          balance: {
+            maxCount,
+            minCount,
+            avgCount: avgCount.toFixed(2),
+            variance: maxCount - minCount,
+          },
+        };
+      });
+
+      // 整体工作量统计
+      const overallStats = teachers.map(teacher => {
+        const totalCount = filteredSchedules.filter(s => s.teacherId === teacher.id).length;
+        const perStage: Record<string, number> = {};
+        stages.forEach(stage => {
+          perStage[`stage${stage.stageNumber}Count`] = filteredSchedules
+            .filter(s => s.teacherId === teacher.id && s.stageId === stage.id).length;
+        });
+        return {
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          subjectName: teacher.subject?.name || '未设置',
+          totalCount,
+          ...perStage,
+        };
+      });
+
+      const overallCounts = overallStats.map(s => s.totalCount);
+      const overallMax = Math.max(...overallCounts, 0);
+      const overallMin = Math.min(...overallCounts, 0);
+      const overallAvg = overallCounts.length > 0
+        ? overallCounts.reduce((a, b) => a + b, 0) / overallCounts.length
+        : 0;
+
+      // 生成均衡性建议
+      const suggestions: string[] = [];
+
+      // 整体工作量建议
+      if (overallMax - overallMin > 3) {
+        const overloadedTeachers = overallStats
+          .filter(s => s.totalCount > overallAvg + 1)
+          .map(s => s.teacherName);
+        const underloadedTeachers = overallStats
+          .filter(s => s.totalCount < overallAvg - 1)
+          .map(s => s.teacherName);
+
+        if (overloadedTeachers.length > 0) {
+          suggestions.push(`建议减少以下教师的整体排班：${overloadedTeachers.join('、')}`);
+        }
+        if (underloadedTeachers.length > 0) {
+          suggestions.push(`建议增加以下教师的整体排班：${underloadedTeachers.join('、')}`);
+        }
+      } else {
+        suggestions.push('当前整体排班较为均衡');
+      }
+
+      // 各阶段建议
+      for (const analysis of stageAnalyses) {
+        if (analysis.balance.variance > 3) {
+          const overloaded = analysis.statistics
+            .filter(s => s.count > parseFloat(analysis.balance.avgCount) + 1)
+            .map(s => s.teacherName);
+          if (overloaded.length > 0) {
+            suggestions.push(`${analysis.stageName}排班偏多的教师：${overloaded.join('、')}`);
+          }
+        }
+      }
+
+      // 兼容旧接口：保留 stage2Count 字段
+      const stage2 = stages.find(s => s.stageNumber === 2);
+      const stage2Analysis = stageAnalyses.find(a => a.stageNumber === 2);
+
       return {
-        teacherId: teacher.id,
-        teacherName: teacher.name,
-        subjectName: teacher.subject?.name || '未设置',
-        stage2Count: count,
+        weekCount: weeks.length,
+        // 兼容旧字段
+        statistics: stage2Analysis
+          ? stage2Analysis.statistics.map(s => ({
+              ...s,
+              stage2Count: s.count,
+            }))
+          : [],
+        balance: stage2Analysis?.balance || { maxCount: 0, minCount: 0, avgCount: '0', variance: 0 },
+        suggestions,
+        // 新增：全阶段分析
+        stageAnalyses,
+        overallStatistics: overallStats.sort((a, b) => b.totalCount - a.totalCount),
+        overallBalance: {
+          maxCount: overallMax,
+          minCount: overallMin,
+          avgCount: overallAvg.toFixed(2),
+          variance: overallMax - overallMin,
+        },
       };
-    });
-    
-    // 计算均衡性指标
-    const counts = teacherStage2Stats.map(s => s.stage2Count);
-    const maxCount = Math.max(...counts, 0);
-    const minCount = Math.min(...counts, 0);
-    const avgCount = counts.length > 0 
-      ? counts.reduce((a, b) => a + b, 0) / counts.length 
-      : 0;
-    
-    // 生成均衡性建议
-    const suggestions: string[] = [];
-    
-    if (maxCount - minCount > 3) {
-      const overloadedTeachers = teacherStage2Stats
-        .filter(s => s.stage2Count > avgCount + 1)
-        .map(s => s.teacherName);
-      const underloadedTeachers = teacherStage2Stats
-        .filter(s => s.stage2Count < avgCount - 1)
-        .map(s => s.teacherName);
-      
-      if (overloadedTeachers.length > 0) {
-        suggestions.push(`建议减少以下教师的第二阶段安排：${overloadedTeachers.join('、')}`);
-      }
-      if (underloadedTeachers.length > 0) {
-        suggestions.push(`建议增加以下教师的第二阶段安排：${underloadedTeachers.join('、')}`);
-      }
-    } else {
-      suggestions.push('当前第二阶段排班较为均衡');
     }
-    
-    return {
-      weekCount: weeks.length,
-      statistics: teacherStage2Stats.sort((a, b) => b.stage2Count - a.stage2Count),
-      balance: {
-        maxCount,
-        minCount,
-        avgCount: avgCount.toFixed(2),
-        variance: maxCount - minCount,
-      },
-      suggestions,
-    };
-  }
 
   // 导出统计数据
   async exportStatistics(weekId: number) {

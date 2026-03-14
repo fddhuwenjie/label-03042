@@ -42,8 +42,15 @@ describe('StatisticsService', () => {
     find: jest.fn().mockResolvedValue(mockTeachers),
   };
 
+  const mockStages = [
+    { id: 1, stageNumber: 1, name: '第一阶段', isActive: true },
+    { id: 2, stageNumber: 2, name: '第二阶段', isActive: true },
+    { id: 3, stageNumber: 3, name: '第三阶段', isActive: true },
+  ];
+
   const mockStageRepo = {
     findOne: jest.fn().mockResolvedValue(mockStage2),
+    find: jest.fn().mockResolvedValue(mockStages),
   };
 
   beforeEach(async () => {
@@ -102,6 +109,10 @@ describe('StatisticsService', () => {
       expect(result).toHaveProperty('statistics');
       expect(result).toHaveProperty('balance');
       expect(result).toHaveProperty('suggestions');
+      // 新增：全阶段分析
+      expect(result).toHaveProperty('stageAnalyses');
+      expect(result).toHaveProperty('overallStatistics');
+      expect(result).toHaveProperty('overallBalance');
     });
 
     it('应该计算正确的均衡性指标', async () => {
@@ -111,6 +122,15 @@ describe('StatisticsService', () => {
       expect(result.balance).toHaveProperty('minCount');
       expect(result.balance).toHaveProperty('avgCount');
       expect(result.balance).toHaveProperty('variance');
+
+      // 全阶段均衡性指标
+      expect(result.overallBalance).toHaveProperty('maxCount');
+      expect(result.overallBalance).toHaveProperty('minCount');
+      expect(result.overallBalance).toHaveProperty('avgCount');
+      expect(result.overallBalance).toHaveProperty('variance');
+
+      // 每个阶段都有独立分析
+      expect((result as any).stageAnalyses.length).toBe(3);
     });
   });
 

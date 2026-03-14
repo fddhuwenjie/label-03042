@@ -86,44 +86,38 @@ describe('SchedulingEngine', () => {
       expect(result.items.length).toBeGreaterThan(0);
     });
 
-    it('班主任每天优先安排1次到自己班级', async () => {
+    it('班主任每周优先安排1次到自己班级', async () => {
       const result = await engine.generateWeekSchedule(1);
       
-      // 按天统计班主任1安排到班级1的次数
-      for (let day = 1; day <= 5; day++) {
-        const headTeacher1ToClass1OnDay = result.items.filter(
-          s => s.teacherId === 1 && s.classId === 1 && s.dayOfWeek === day && s.scheduleType === 'headTeacher'
-        );
-        // 每天最多安排1次
-        expect(headTeacher1ToClass1OnDay.length).toBeLessThanOrEqual(1);
-      }
-      
-      // 整周应该有多次安排（每天都可以安排）
+      // 整周班主任1以 headTeacher 类型安排到班级1 应该只有1次
       const headTeacher1ToClass1Total = result.items.filter(
         s => s.teacherId === 1 && s.classId === 1 && s.scheduleType === 'headTeacher'
       );
-      expect(headTeacher1ToClass1Total.length).toBeGreaterThanOrEqual(1);
+      expect(headTeacher1ToClass1Total.length).toBe(1);
+      
+      // 班主任2以 headTeacher 类型安排到班级2 也应该只有1次
+      const headTeacher2ToClass2Total = result.items.filter(
+        s => s.teacherId === 2 && s.classId === 2 && s.scheduleType === 'headTeacher'
+      );
+      expect(headTeacher2ToClass2Total.length).toBe(1);
     });
 
-    it('主科教师每天优先安排1次到任教班级', async () => {
+    it('主科教师每周优先安排1次到任教班级', async () => {
       const result = await engine.generateWeekSchedule(1);
       
-      // 按天统计主科教师安排到任教班级的次数
-      for (let day = 1; day <= 5; day++) {
-        const mainSubjectAssignmentsOnDay = result.items.filter(
-          s => s.scheduleType === 'mainSubject' && s.dayOfWeek === day
-        );
-        
-        // 每个主科教师每天最多1次
-        const teacherCounts = new Map<number, number>();
-        mainSubjectAssignmentsOnDay.forEach(s => {
-          teacherCounts.set(s.teacherId, (teacherCounts.get(s.teacherId) || 0) + 1);
-        });
-        
-        teacherCounts.forEach((count) => {
-          expect(count).toBeLessThanOrEqual(1);
-        });
-      }
+      // 整周每个主科教师以 mainSubject 类型安排应该最多1次
+      const mainSubjectAssignments = result.items.filter(
+        s => s.scheduleType === 'mainSubject'
+      );
+      
+      const teacherCounts = new Map<number, number>();
+      mainSubjectAssignments.forEach(s => {
+        teacherCounts.set(s.teacherId, (teacherCounts.get(s.teacherId) || 0) + 1);
+      });
+      
+      teacherCounts.forEach((count) => {
+        expect(count).toBe(1);
+      });
     });
 
     it('学科校验日应过滤对应教师', async () => {
