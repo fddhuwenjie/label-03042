@@ -171,7 +171,7 @@ const ScheduleManage: React.FC = () => {
     if (!selectedWeekId) return;
     
     try {
-      const blob: Blob = await scheduleApi.exportSchedule(selectedWeekId);
+      const blob = (await scheduleApi.exportSchedule(selectedWeekId)) as unknown as Blob;
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

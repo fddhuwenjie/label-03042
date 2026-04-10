@@ -105,8 +105,8 @@ const Statistics: React.FC = () => {
     if (!selectedWeekId) return;
     
     try {
-      const response: any = await statisticsApi.exportData(selectedWeekId, exportFormat);
-      const url = window.URL.createObjectURL(new Blob([response]));
+      const blob = (await statisticsApi.exportData(selectedWeekId, exportFormat)) as unknown as Blob;
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `statistics-week-${selectedWeekId}.${exportFormat}`);

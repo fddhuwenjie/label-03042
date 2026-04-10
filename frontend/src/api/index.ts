@@ -71,6 +71,11 @@ api.interceptors.request.use(
  */
 api.interceptors.response.use(
   (response) => {
+    // 对于 Blob 响应（文件下载），直接返回 Blob
+    if (response.config.responseType === 'blob') {
+      return response.data;
+    }
+    
     const res = response.data as ApiResponse;
     
     // code 为 0 表示成功，返回 data
