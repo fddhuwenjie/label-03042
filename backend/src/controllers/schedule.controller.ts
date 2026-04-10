@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { ScheduleService } from '../services/schedule.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CreateWeekDto, UpdateScheduleDto } from '../dto';
+import * as ExcelJS from 'exceljs';
 
 /**
  * 排班管理控制器
@@ -144,5 +146,119 @@ export class ScheduleController {
   @Delete('weeks/:weekId')
   async deleteWeek(@Param('weekId') weekId: number) {
     return this.scheduleService.deleteWeek(weekId);
+  }
+
+  /**
+   * 导出排课方案为Excel
+   * 
+   * 生成Excel文件，表头为"时段\周一\周二\周三\周四\周五"，
+   * 每个单元格显示"科目名-教师名(教室)"，空时段显示"-"
+   * 
+   * @param {number} weekId - 排班周 ID
+   * @param {Response} res - Express 响应对象
+   * @returns {Promise<void>} 直接返回文件流
+   * @throws {NotFoundException} 当指定的排班周不存在时
+   */
+  @Get('weeks/:weekId/export')
+  async exportSchedule(@Param('weekId') weekId: number, @Res() res: Response) {
+    const { week, schedules } = await this.scheduleService.findByWeek(weekId);
+    
+    // 创建工作簿
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('排课方案');
+    
+    // 设置列宽
+    worksheet.columns = [
+      { header: '时段', key: 'stage', width: 15 },
+      { header: '周一', key: 'monday', width: 25 },
+      { header: '周二', key: 'tuesday', width: 25 },
+      { header: '周三', key: 'wednesday', width: 25 },
+      { header: '周四', key: 'thursday', width: 25 },
+      { header: '周五', key: 'friday', width: 25 },
+    ];
+    
+    // 设置表头样式
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, size: 12 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+    
+    // 获取所有阶段
+    const stages = [...new Set(schedules.map(s => s.stageId))].sort();
+    const stageMap = new Map();
+    schedules.forEach(s => {
+      if (!stageMap.has(s.stageId)) {
+        stageMap.set(s.stageId, s.stage);
+      }
+    });
+    
+    // 按阶段和星期组织数据
+    stages.forEach((stageId, index) => {
+      const stage = stageMap.get(stageId);
+      const rowData: any = { stage: stage?.name || `阶段${index + 1}` };
+      
+      // 遍历周一到周五
+      for (let day = 1; day <= 5; day++) {
+        const daySchedules = schedules.filter(
+          s => s.stageId === stageId && s.dayOfWeek === day
+        );
+        
+        if (daySchedules.length === 0) {
+          rowData[['monday', 'tuesday', 'wednesday', 'thursday', 'friday'][day - 1]] = '-';
+        } else {
+          // 多个排班用换行符连接
+          const cellValue = daySchedules
+            .map(s => {
+              const subjectName = s.teacher?.subject?.name || '未设置';
+              const teacherName = s.teacher?.name || '未分配';
+              const className = s.class?.name || '未分配';
+              return `${subjectName}-${teacherName}(${className})`;
+            })
+            .join('\n');
+          rowData[['monday', 'tuesday', 'wednesday', 'thursday', 'friday'][day - 1]] = cellValue;
+        }
+      }
+      
+      const row = worksheet.addRow(rowData);
+      
+      // 设置单元格样式
+      row.eachCell((cell) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      });
+      
+      // 设置行高以容纳多行内容
+      row.height = 40;
+    });
+    
+    // 生成文件名：排课方案_第N周_YYYYMMDD.xlsx
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `排课方案_第${week.weekNumber}周_${dateStr}.xlsx`;
+    
+    // 设置响应头
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${encodeURIComponent(filename)}`);
+    
+    // 写入响应
+    await workbook.xlsx.write(res);
+    res.end();
   }
 }

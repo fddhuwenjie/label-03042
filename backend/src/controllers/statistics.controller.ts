@@ -1,8 +1,10 @@
 import { Controller, Get, Param, Query, UseGuards, Res, BadRequestException } from '@nestjs/common';
 import { Response } from 'express';
 import { StatisticsService } from '../services/statistics.service';
+import { ScheduleService } from '../services/schedule.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 /**
  * 统计分析控制器
@@ -19,7 +21,10 @@ import * as XLSX from 'xlsx';
 @Controller('statistics')
 @UseGuards(JwtAuthGuard)
 export class StatisticsController {
-  constructor(private statisticsService: StatisticsService) {}
+  constructor(
+    private statisticsService: StatisticsService,
+    private scheduleService: ScheduleService,
+  ) {}
 
   /**
    * 获取指定周的教师排班统计
@@ -179,5 +184,186 @@ export class StatisticsController {
     @Query('weekCount') weekCount: number = 4,
   ) {
     return this.statisticsService.getWorkloadTrend(teacherId, weekCount);
+  }
+
+  /**
+   * 导出指定周的统计数据为Excel（双Sheet）
+   * 
+   * 导出该周的统计数据，包含两个Sheet：
+   * - Sheet1: 教师课时数统计
+   * - Sheet2: 科目分布统计
+   * 
+   * @param {number} weekId - 排班周 ID
+   * @param {Response} res - Express 响应对象
+   * @returns {Promise<void>} 直接返回文件流
+   * @throws {NotFoundException} 当指定的排班周不存在时
+   */
+  @Get('weeks/:weekId/export')
+  async exportWeekStatistics(
+    @Param('weekId') weekId: number,
+    @Res() res: Response,
+  ) {
+    // 获取排班周信息
+    const { week, schedules } = await this.scheduleService.findByWeek(weekId);
+    
+    // 获取统计数据
+    const stats = await this.statisticsService.getWeeklyStatistics(weekId);
+    const multiStats = await this.statisticsService.getMultiDimensionStatistics(weekId);
+    
+    // 创建工作簿
+    const workbook = new ExcelJS.Workbook();
+    
+    // ========== Sheet 1: 教师课时数统计 ==========
+    const teacherSheet = workbook.addWorksheet('教师课时数');
+    
+    // 设置列
+    teacherSheet.columns = [
+      { header: '教师姓名', key: 'teacherName', width: 15 },
+      { header: '任教学科', key: 'subjectName', width: 15 },
+      { header: '总排班次数', key: 'totalCount', width: 15 },
+      { header: '第二阶段次数', key: 'stage2Count', width: 15 },
+    ];
+    
+    // 添加数据
+    stats.statistics.forEach((s: any) => {
+      teacherSheet.addRow({
+        teacherName: s.teacherName,
+        subjectName: s.subjectName,
+        totalCount: s.totalCount,
+        stage2Count: s.stage2Count,
+      });
+    });
+    
+    // 设置Sheet1表头样式
+    const teacherHeaderRow = teacherSheet.getRow(1);
+    teacherHeaderRow.eachCell((cell) => {
+      cell.font = { bold: true, size: 11 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+    
+    // 设置Sheet1数据样式
+    teacherSheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        row.eachCell((cell) => {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' },
+          };
+        });
+      }
+    });
+    
+    // ========== Sheet 2: 科目分布统计 ==========
+    const subjectSheet = workbook.addWorksheet('科目分布');
+    
+    // 设置列
+    subjectSheet.columns = [
+      { header: '学科名称', key: 'subjectName', width: 15 },
+      { header: '排班次数', key: 'scheduleCount', width: 15 },
+      { header: '涉及教师数', key: 'teacherCount', width: 15 },
+      { header: '占比(%)', key: 'percentage', width: 15 },
+    ];
+    
+    // 计算总排班数以计算占比
+    const totalSchedules = multiStats.totalSchedules || 0;
+    
+    // 添加数据
+    multiStats.bySubject.forEach((s: any) => {
+      const percentage = totalSchedules > 0 
+        ? ((s.scheduleCount / totalSchedules) * 100).toFixed(1) 
+        : '0.0';
+      subjectSheet.addRow({
+        subjectName: s.subjectName,
+        scheduleCount: s.scheduleCount,
+        teacherCount: s.teacherCount,
+        percentage: percentage + '%',
+      });
+    });
+    
+    // 添加汇总行
+    subjectSheet.addRow({});
+    const summaryRow = subjectSheet.addRow({
+      subjectName: '总计',
+      scheduleCount: totalSchedules,
+      teacherCount: '-',
+      percentage: '100%',
+    });
+    
+    // 设置Sheet2表头样式
+    const subjectHeaderRow = subjectSheet.getRow(1);
+    subjectHeaderRow.eachCell((cell) => {
+      cell.font = { bold: true, size: 11 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+    
+    // 设置Sheet2数据样式
+    subjectSheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1 && rowNumber < subjectSheet.rowCount - 1) {
+        row.eachCell((cell) => {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' },
+          };
+        });
+      }
+    });
+    
+    // 设置汇总行样式
+    summaryRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF0F0F0' },
+      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+    
+    // 生成文件名：统计数据_第N周_YYYYMMDD.xlsx
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `统计数据_第${week.weekNumber}周_${dateStr}.xlsx`;
+    
+    // 设置响应头
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${encodeURIComponent(filename)}`);
+    
+    // 写入响应
+    await workbook.xlsx.write(res);
+    res.end();
   }
 }

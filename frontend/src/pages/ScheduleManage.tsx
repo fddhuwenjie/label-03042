@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Modal, Select, Space, message, Tag, Popconfirm, DatePicker, Empty, Alert, Tooltip } from 'antd';
-import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined, ScheduleOutlined, WarningOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined, ScheduleOutlined, WarningOutlined, FileExcelOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 
@@ -155,7 +155,7 @@ const ScheduleManage: React.FC = () => {
   // 删除排班周
   const handleDeleteWeek = async () => {
     if (!selectedWeekId) return;
-    
+
     try {
       await scheduleApi.deleteWeek(selectedWeekId);
       message.success('删除成功');
@@ -163,6 +163,29 @@ const ScheduleManage: React.FC = () => {
       loadWeeks();
     } catch {
       // API 拦截器已处理错误提示
+    }
+  };
+
+  // 导出排课方案
+  const handleExportSchedule = async () => {
+    if (!selectedWeekId) return;
+
+    try {
+      const blob = await scheduleApi.exportSchedule(selectedWeekId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      // 从响应头获取文件名，或使用默认格式
+      const today = dayjs().format('YYYYMMDD');
+      const weekNumber = currentWeek?.weekNumber || selectedWeekId;
+      link.download = `排课方案_第${weekNumber}周_${today}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      message.success('导出成功');
+    } catch {
+      message.error('导出失败');
     }
   };
 
@@ -303,6 +326,11 @@ const ScheduleManage: React.FC = () => {
                 <Button danger icon={<DeleteOutlined />}>删除</Button>
               </Popconfirm>
             </>
+          )}
+          {selectedWeekId && schedules.length > 0 && (
+            <Button icon={<FileExcelOutlined />} onClick={handleExportSchedule}>
+              导出Excel
+            </Button>
           )}
         </Space>
 
