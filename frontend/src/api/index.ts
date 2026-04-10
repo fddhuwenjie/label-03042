@@ -303,6 +303,14 @@ export const scheduleApi = {
   
   /** 删除排班周 */
   deleteWeek: (weekId: number) => api.delete(`/schedules/weeks/${weekId}`),
+
+  /**
+   * 导出排课方案为Excel
+   * @param {number} weekId - 排班周 ID
+   * @returns {Promise<Blob>} Excel 文件 Blob
+   */
+  exportSchedule: (weekId: number) =>
+    api.get(`/schedules/weeks/${weekId}/export`, { responseType: 'blob' }).then(res => res.data),
 };
 
 /**
@@ -348,6 +356,14 @@ export const statisticsApi = {
    */
   exportExcel: (weekId: number) =>
     api.get(`/statistics/export/${weekId}`, { responseType: 'blob' }),
+
+  /**
+   * 导出指定周的统计数据为Excel（双Sheet）
+   * @param {number} weekId - 排班周 ID
+   * @returns {Promise<Blob>} Excel 文件 Blob
+   */
+  exportWeekStatistics: (weekId: number) =>
+    api.get(`/statistics/weeks/${weekId}/export`, { responseType: 'blob' }),
 
   /**
    * 获取多维度统计分析
