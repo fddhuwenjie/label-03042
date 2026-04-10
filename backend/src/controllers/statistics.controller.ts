@@ -1,8 +1,8 @@
-import { Controller, Get, Param, Query, UseGuards, Res, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Res, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { StatisticsService } from '../services/statistics.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 /**
  * 统计分析控制器
@@ -107,48 +107,58 @@ export class StatisticsController {
    * @throws {BadRequestException} 当格式参数无效时
    */
   @Get('export/:weekId')
-  async exportStatistics(
+  async exportStatisticsLegacy(
     @Param('weekId') weekId: number,
     @Query('format') format: string = 'xlsx',
     @Res() res: Response,
   ) {
-    const validFormats = ['xlsx', 'csv'];
-    if (!validFormats.includes(format)) {
-      throw new BadRequestException(`不支持的导出格式: ${format}，支持的格式: ${validFormats.join(', ')}`);
+    return this.exportStatisticsExcel(weekId, res);
+  }
+
+  @Get('weeks/:weekId/export')
+  async exportStatistics(
+    @Param('weekId') weekId: number,
+    @Res() res: Response,
+  ) {
+    return this.exportStatisticsExcel(weekId, res);
+  }
+
+  private async exportStatisticsExcel(
+    weekId: number,
+    res: Response,
+  ) {
+    const weekData = await this.statisticsService.exportStatistics(weekId);
+    if (!weekData || !weekData.weekInfo) {
+      throw new NotFoundException('排班周不存在');
     }
 
-    const data = await this.statisticsService.exportStatistics(weekId);
-    
-    // 创建工作簿
-    const workbook = XLSX.utils.book_new();
-    
-    // 创建统计数据工作表
-    const statsData = data.statistics.map(s => ({
-      '教师姓名': s.teacherName,
-      '任教学科': s.subjectName,
-      '总排班次数': s.totalCount,
-      '第二阶段次数': s.stage2Count,
-    }));
-    
-    const worksheet = XLSX.utils.json_to_sheet(statsData);
-    XLSX.utils.book_append_sheet(workbook, worksheet, '教师统计');
-    
-    if (format === 'csv') {
-      // 导出 CSV 格式
-      const csvContent = XLSX.utils.sheet_to_csv(worksheet);
-      const buffer = Buffer.from('\uFEFF' + csvContent, 'utf-8'); // 添加 BOM 以支持中文
-      
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename=statistics-week-${weekId}.csv`);
-      res.send(buffer);
-    } else {
-      // 导出 Excel 格式
-      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=statistics-week-${weekId}.xlsx`);
-      res.send(buffer);
-    }
+    const multiDimData = await this.statisticsService.getMultiDimensionStatistics(weekId);
+
+    const workbook = new ExcelJS.Workbook();
+
+    const teacherSheet = workbook.addWorksheet('教师课时数');
+    teacherSheet.columns = [
+      { header: '教师姓名', key: 'teacherName', width: 20 },
+      { header: '任教学科', key: 'subjectName', width: 20 },
+      { header: '总课时数', key: 'totalCount', width: 15 },
+      { header: '第二阶段课时', key: 'stage2Count', width: 18 },
+    ];
+    weekData.statistics.forEach(s => teacherSheet.addRow(s));
+
+    const subjectSheet = workbook.addWorksheet('科目分布');
+    subjectSheet.columns = [
+      { header: '科目名称', key: 'subjectName', width: 25 },
+      { header: '排班次数', key: 'scheduleCount', width: 15 },
+      { header: '涉及教师数', key: 'teacherCount', width: 18 },
+    ];
+    multiDimData.bySubject.forEach(item => subjectSheet.addRow(item));
+
+    const filename = `统计数据_第${weekData.weekInfo.weekNumber}周.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+
+    await workbook.xlsx.write(res);
+    res.end();
   }
 
   /**

@@ -1,7 +1,12 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Res, NotFoundException } from '@nestjs/common';
 import { ScheduleService } from '../services/schedule.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CreateWeekDto, UpdateScheduleDto } from '../dto';
+import { Response } from 'express';
+import * as ExcelJS from 'exceljs';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Stage } from '../entities/stage.entity';
+import { Repository } from 'typeorm';
 
 /**
  * 排班管理控制器
@@ -16,7 +21,11 @@ import { CreateWeekDto, UpdateScheduleDto } from '../dto';
 @Controller('schedules')
 @UseGuards(JwtAuthGuard)
 export class ScheduleController {
-  constructor(private scheduleService: ScheduleService) {}
+  constructor(
+    private scheduleService: ScheduleService,
+    @InjectRepository(Stage)
+    private stageRepository: Repository<Stage>,
+  ) {}
 
   /**
    * 获取所有排班周列表
@@ -144,5 +153,82 @@ export class ScheduleController {
   @Delete('weeks/:weekId')
   async deleteWeek(@Param('weekId') weekId: number) {
     return this.scheduleService.deleteWeek(weekId);
+  }
+
+  /**
+   * 导出排课方案为 Excel 文件
+   * 
+   * 生成包含该周所有排班信息的 Excel 文件，支持下载保存
+   * 
+   * @param {number} weekId - 排班周 ID
+   * @returns {Promise<void>} Excel 文件流
+   * @throws {NotFoundException} 当指定的排班周不存在时
+   */
+  @Get('weeks/:weekId/export')
+  async exportSchedule(
+    @Param('weekId') weekId: number,
+    @Res() res: Response,
+  ) {
+    const { week, schedules } = await this.scheduleService.findByWeek(weekId);
+    if (!week) {
+      throw new NotFoundException('排班周不存在');
+    }
+
+    const stages = await this.stageRepository.find({
+      where: { isActive: true },
+      order: { stageNumber: 'ASC' },
+    });
+
+    const stageMap = new Map(stages.map(s => [s.id, s.name]));
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('排课方案');
+
+    worksheet.columns = [
+      { header: '时段', key: 'timeSlot', width: 20 },
+      { header: '周一', key: 'monday', width: 30 },
+      { header: '周二', key: 'tuesday', width: 30 },
+      { header: '周三', key: 'wednesday', width: 30 },
+      { header: '周四', key: 'thursday', width: 30 },
+      { header: '周五', key: 'friday', width: 30 },
+    ];
+
+    const scheduleMap = new Map();
+    schedules.forEach(schedule => {
+      const key = `${schedule.stageId}-${schedule.dayOfWeek}`;
+      scheduleMap.set(key, schedule);
+    });
+
+    const stageSet = new Set(schedules.map(s => s.stageId));
+    const sortedStages = Array.from(stageSet).sort((a, b) => a - b);
+
+    sortedStages.forEach(stageId => {
+      const row: any = { timeSlot: stageMap.get(stageId) || `第${stageId}时段` };
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+      
+      days.forEach((day, index) => {
+        const dayOfWeek = index + 1;
+        const key = `${stageId}-${dayOfWeek}`;
+        const schedule = scheduleMap.get(key);
+        
+        if (schedule) {
+          row[day] = `${schedule.teacher?.subject?.name || '未知'}-${schedule.teacher?.name || '未知'}(${schedule.class?.name || '未知'})`;
+        } else {
+          row[day] = '-';
+        }
+      });
+      
+      worksheet.addRow(row);
+    });
+
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+    const filename = `排课方案_第${week.weekNumber}周_${dateStr}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+
+    await workbook.xlsx.write(res);
+    res.end();
   }
 }

@@ -303,6 +303,14 @@ export const scheduleApi = {
   
   /** 删除排班周 */
   deleteWeek: (weekId: number) => api.delete(`/schedules/weeks/${weekId}`),
+
+  /**
+   * 导出排课方案为 Excel 文件
+   * @param {number} weekId - 排班周 ID
+   * @returns {Promise<Blob>} Excel 文件 Blob
+   */
+  exportSchedule: (weekId: number) =>
+    api.get(`/schedules/weeks/${weekId}/export`, { responseType: 'blob' }),
 };
 
 /**
@@ -330,7 +338,7 @@ export const statisticsApi = {
     api.get('/statistics/history', { params: { page, pageSize } }),
   
   /**
-   * 导出统计数据
+   * 导出统计数据（旧接口，兼容）
    * @param {number} weekId - 排班周 ID
    * @param {string} format - 导出格式：xlsx 或 csv
    * @returns {Promise<Blob>} 文件 Blob
@@ -342,12 +350,20 @@ export const statisticsApi = {
     }),
 
   /**
-   * 导出统计数据为 Excel 文件（兼容旧接口）
+   * 导出统计数据为 Excel 文件（旧接口，兼容）
    * @param {number} weekId - 排班周 ID
    * @returns {Promise<Blob>} Excel 文件 Blob
    */
   exportExcel: (weekId: number) =>
     api.get(`/statistics/export/${weekId}`, { responseType: 'blob' }),
+
+  /**
+   * 导出指定周的统计数据为 Excel 文件（新接口路径）
+   * @param {number} weekId - 排班周 ID
+   * @returns {Promise<Blob>} Excel 文件 Blob（包含两个 Sheet：教师课时数、科目分布）
+   */
+  exportWeekStatistics: (weekId: number) =>
+    api.get(`/statistics/weeks/${weekId}/export`, { responseType: 'blob' }),
 
   /**
    * 获取多维度统计分析
