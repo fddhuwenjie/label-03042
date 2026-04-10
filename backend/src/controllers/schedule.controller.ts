@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Res, NotFoundException } from '@nestjs/common';
+import { Response } from 'express';
+import * as ExcelJS from 'exceljs';
 import { ScheduleService } from '../services/schedule.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CreateWeekDto, UpdateScheduleDto } from '../dto';
@@ -144,5 +146,116 @@ export class ScheduleController {
   @Delete('weeks/:weekId')
   async deleteWeek(@Param('weekId') weekId: number) {
     return this.scheduleService.deleteWeek(weekId);
+  }
+
+  /**
+   * 导出排课方案为 Excel
+   * 
+   * 生成指定周的排课表 Excel 文件，表头为"时段\周一\周二\周三\周四\周五"，
+   * 每个单元格显示"科目名-教师名(教室)"，空时段显示"-"
+   * 
+   * @param {number} weekId - 排班周 ID
+   * @param {Response} res - Express 响应对象
+   * @returns {Promise<void>} 直接返回 Excel 文件流
+   * @throws {NotFoundException} 当指定的排班周不存在时
+   */
+  @Get('weeks/:weekId/export')
+  async exportSchedule(
+    @Param('weekId') weekId: number,
+    @Res() res: Response,
+  ) {
+    const data = await this.scheduleService.findByWeek(weekId);
+    if (!data || !data.week) {
+      throw new NotFoundException('排班周不存在');
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('排课表');
+
+    // 设置列宽
+    worksheet.columns = [
+      { width: 20 },
+      { width: 25 },
+      { width: 25 },
+      { width: 25 },
+      { width: 25 },
+      { width: 25 },
+    ];
+
+    // 表头
+    const headerRow = worksheet.addRow(['时段', '周一', '周二', '周三', '周四', '周五']);
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE6F7FF' },
+      };
+      cell.font = { bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+
+    // 按阶段和天组织数据
+    const schedules = data.schedules;
+    const stages = [...new Set(schedules.map(s => s.stage))].sort((a, b) => a.stageNumber - b.stageNumber);
+    
+    for (const stage of stages) {
+      const rowData = [stage.name || `阶段${stage.stageNumber}`];
+      for (let day = 1; day <= 5; day++) {
+        const daySchedules = schedules.filter(
+          s => s.stageId === stage.id && s.dayOfWeek === day
+        );
+        if (daySchedules.length > 0) {
+          const cellContent = daySchedules
+            .map(s => {
+              const subjectName = s.teacher?.subject?.name || '未设置';
+              const teacherName = s.teacher?.name || '未分配教师';
+              const className = s.class?.name || '未分配教室';
+              return `${subjectName}-${teacherName}(${className})`;
+            })
+            .join('\n');
+          rowData.push(cellContent);
+        } else {
+          rowData.push('-');
+        }
+      }
+      const dataRow = worksheet.addRow(rowData);
+      dataRow.eachCell((cell) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      });
+      // 设置行高
+      dataRow.height = 30 * Math.max(...rowData.map(c => c.toString().split('\n').length));
+    }
+
+    // 生成文件名：排课方案_第N周_YYYYMMDD.xlsx
+    const week = data.week;
+    const today = new Date();
+    const dateStr = today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, '0') +
+      String(today.getDate()).padStart(2, '0');
+    const fileName = `排课方案_第${week.weekNumber}周_${dateStr}.xlsx`;
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
   }
 }

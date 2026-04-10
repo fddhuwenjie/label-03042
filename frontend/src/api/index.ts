@@ -303,6 +303,14 @@ export const scheduleApi = {
   
   /** 删除排班周 */
   deleteWeek: (weekId: number) => api.delete(`/schedules/weeks/${weekId}`),
+
+  /**
+   * 导出排课方案为 Excel 文件
+   * @param {number} weekId - 排班周 ID
+   * @returns {Promise<Blob>} Excel 文件 Blob
+   */
+  exportSchedule: (weekId: number) =>
+    api.get(`/schedules/weeks/${weekId}/export`, { responseType: 'blob' }),
 };
 
 /**
@@ -363,6 +371,15 @@ export const statisticsApi = {
    */
   getWorkloadTrend: (teacherId: number, weekCount: number = 4) =>
     api.get(`/statistics/workload-trend/${teacherId}`, { params: { weekCount } }),
+
+  /**
+   * 导出统计数据 Excel（新版接口）
+   * 导出包含两个工作表的 Excel 文件
+   * @param {number} weekId - 排班周 ID
+   * @returns {Promise<Blob>} Excel 文件 Blob
+   */
+  exportStatisticsExcel: (weekId: number) =>
+    api.get(`/statistics/weeks/${weekId}/export`, { responseType: 'blob' }),
 };
 
 export default api;

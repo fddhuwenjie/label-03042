@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Modal, Select, Space, message, Tag, Popconfirm, DatePicker, Empty, Alert, Tooltip } from 'antd';
-import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined, ScheduleOutlined, WarningOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined, ScheduleOutlined, WarningOutlined, DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 
@@ -166,6 +166,31 @@ const ScheduleManage: React.FC = () => {
     }
   };
 
+  // 导出排班Excel
+  const handleExport = async () => {
+    if (!selectedWeekId || !currentWeek) return;
+    
+    try {
+      const response: any = await scheduleApi.exportSchedule(selectedWeekId);
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const today = dayjs().format('YYYYMMDD');
+      const fileName = `排课方案_第${currentWeek.weekNumber}周_${today}.xlsx`;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      message.success('导出成功');
+    } catch {
+      // API 拦截器已处理错误提示
+    }
+  };
+
   // 更新单个排班
   const handleUpdateSchedule = async (scheduleId: number, field: string, value: number) => {
     try {
@@ -291,6 +316,11 @@ const ScheduleManage: React.FC = () => {
           <Button icon={<PlusOutlined />} onClick={() => setCreateModalVisible(true)}>
             新建排班周
           </Button>
+          {selectedWeekId && (
+            <Button icon={<DownloadOutlined />} onClick={handleExport}>
+              导出Excel
+            </Button>
+          )}
           {selectedWeekId && currentWeek?.status !== 'confirmed' && (
             <>
               <Button type="primary" icon={<ReloadOutlined />} onClick={handleGenerate}>

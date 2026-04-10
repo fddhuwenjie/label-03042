@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Query, UseGuards, Res, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Res, BadRequestException, NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
+import * as ExcelJS from 'exceljs';
 import { StatisticsService } from '../services/statistics.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import * as XLSX from 'xlsx';
@@ -149,6 +150,153 @@ export class StatisticsController {
       res.setHeader('Content-Disposition', `attachment; filename=statistics-week-${weekId}.xlsx`);
       res.send(buffer);
     }
+  }
+
+  /**
+   * 导出统计数据 Excel（新版本）
+   * 
+   * 导出指定周的统计数据 Excel 文件，包含两个工作表：
+   * - Sheet1 "教师课时统计"：教师排班次数统计数据
+   * - Sheet2 "科目分布"：学科分布统计数据
+   * 
+   * @param {number} weekId - 排班周 ID
+   * @param {Response} res - Express 响应对象
+   * @returns {Promise<void>} 直接返回 Excel 文件流
+   * @throws {NotFoundException} 当指定的排班周不存在时
+   */
+  @Get('weeks/:weekId/export')
+  async exportStatisticsV2(
+    @Param('weekId') weekId: number,
+    @Res() res: Response,
+  ) {
+    // 获取教师课时统计
+    const teacherStatsData = await this.statisticsService.getWeeklyStatistics(weekId);
+    if (!teacherStatsData) {
+      throw new NotFoundException('排班周不存在');
+    }
+
+    // 获取多维度统计（用于科目分布）
+    const multiDimStats = await this.statisticsService.getMultiDimensionStatistics(weekId);
+    
+    // 获取周信息
+    const weekData = await this.statisticsService.exportStatistics(weekId);
+    const week = weekData.weekInfo;
+
+    const workbook = new ExcelJS.Workbook();
+    
+    // Sheet1: 教师课时统计
+    const sheet1 = workbook.addWorksheet('教师课时统计');
+    
+    // 设置列宽
+    sheet1.columns = [
+      { width: 20 },
+      { width: 15 },
+      { width: 15 },
+      { width: 15 },
+    ];
+    
+    // 表头
+    const header1 = sheet1.addRow(['教师姓名', '任教学科', '总排班次数', '第二阶段次数']);
+    header1.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE6F7FF' },
+      };
+      cell.font = { bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+    
+    // 数据行
+    teacherStatsData.statistics.forEach((stat: any) => {
+      const row = sheet1.addRow([
+        stat.teacherName,
+        stat.subjectName,
+        stat.totalCount,
+        stat.stage2Count,
+      ]);
+      row.eachCell((cell) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      });
+    });
+
+    // Sheet2: 科目分布
+    const sheet2 = workbook.addWorksheet('科目分布');
+    
+    // 设置列宽
+    sheet2.columns = [
+      { width: 20 },
+      { width: 15 },
+      { width: 15 },
+    ];
+    
+    // 表头
+    const header2 = sheet2.addRow(['科目名称', '排班次数', '教师人数']);
+    header2.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF0FFF0' },
+      };
+      cell.font = { bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+    
+    // 数据行
+    multiDimStats.bySubject.forEach((subject: any) => {
+      const row = sheet2.addRow([
+        subject.subjectName,
+        subject.scheduleCount,
+        subject.teacherCount,
+      ]);
+      row.eachCell((cell) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      });
+    });
+
+    // 生成文件名
+    const weekNum = week?.weekNumber || 1;
+    const today = new Date();
+    const dateStr = today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, '0') +
+      String(today.getDate()).padStart(2, '0');
+    const fileName = `统计数据_第${weekNum}周_${dateStr}.xlsx`;
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
   }
 
   /**
